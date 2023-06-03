@@ -4,25 +4,17 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.IO;
-
-using Microsoft.Extensions.Configuration;
+using TfsExporter;
+using System.Runtime.CompilerServices;
 
 namespace SrsExporter
 {
     internal class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            var config = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json")
-                .Build();
-
-            var username = config["Username"];
-            var password = config["Password"];
-            var uri = config["Uri"];
-            var collection = config["Collection"];
-            var project = config["Project"];
+            SrsExporter se = new SrsExporter();
+            await se.ListEpics();
 
             Console.ReadKey();
         }
