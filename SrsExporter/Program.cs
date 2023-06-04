@@ -14,7 +14,9 @@ namespace SrsExporter
         static async Task Main(string[] args)
         {
             SrsExporter se = new SrsExporter();
-            await se.ListEpics();
+            // await se.ListEpics();
+
+            await se.SaveSrs();
 
             Console.ReadKey();
         }

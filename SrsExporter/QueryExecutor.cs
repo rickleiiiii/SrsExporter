@@ -11,6 +11,7 @@ using Microsoft.VisualStudio.Services.Common;
 
 using Microsoft.Extensions.Configuration;
 using System.IO;
+using Microsoft.TeamFoundation.VersionControl.Client;
 
 namespace TfsExporter
 {
@@ -128,7 +129,7 @@ namespace TfsExporter
             }
         }
 
-        public async Task<IList<WorkItem>> QueryEpics()
+        public async Task<IList<WorkItem>> QueryEpics(string[] fields)
         {
             NetworkCredential netCre = new NetworkCredential(this.username, this.password);
             WindowsCredential winCre = new WindowsCredential(netCre);
@@ -137,11 +138,10 @@ namespace TfsExporter
             var wiql = new Wiql()
             {
                 // NOTE: Even if other columns are specified, only the ID & URL are available in the WorkItemReference
-                Query = "Select [Id] " +
+                Query = "Select [Id], [Microsoft.VSTS.Common.StackRank] " +
                         "From WorkItems " +
                         "Where [Work Item Type] = 'Epic' " +
-                        "And [System.TeamProject] = '" + this.project + "' " +
-                        "Order By [Microsoft.VSTS.Common.StackRank]",
+                        "And [System.TeamProject] = '" + this.project + "' ",
             };
 
             // create instance of work item tracking http client
@@ -151,23 +151,43 @@ namespace TfsExporter
                 var result = await httpClient.QueryByWiqlAsync(wiql).ConfigureAwait(false);
                 var ids = result.WorkItems.Select(item => item.Id).ToArray();
 
-                // some error handling
-                if (ids.Length == 0)
+                List<WorkItem> allWorkItems = new List<WorkItem>();
+                int batchSize = 200;
+                int skip = 0;
+
+                while (true)
                 {
-                    return Array.Empty<WorkItem>();
+                    var idsToFetch = ids.Skip(skip).Take(batchSize).ToList();
+                    if (idsToFetch.Count == 0)
+                    {
+                        break;
+                    }
+                    
+                    // get work items for the ids found in query
+                    var workItems = await httpClient.GetWorkItemsAsync(idsToFetch, fields, result.AsOf).ConfigureAwait(false);
+                    allWorkItems.AddRange(workItems);
+                    skip += batchSize;
                 }
 
-                if (ids.Length >= 10)
-                {
-                    ids = ids.Take<int>(10).ToArray();
-                }
+                allWorkItems = this.SortItemsByStackRank(allWorkItems).ToList();
 
-                // build a list of the fields we want to see
-                var fields = new[] { "System.Id", "System.Title", "System.Description", "Microsoft.VSTS.Common.StackRank" };
-
-                // get work items for the ids found in query
-                return await httpClient.GetWorkItemsAsync(ids, fields, result.AsOf).ConfigureAwait(false);
+                return allWorkItems;
             }
+        }
+
+        private IList<WorkItem> SortItemsByStackRank(IList<WorkItem> workItems)
+        {
+            return workItems.OrderBy(wi =>
+            {
+                if (wi.Fields.TryGetValue("Microsoft.VSTS.Common.StackRank", out var stackRankField))
+                {
+                    if (!string.IsNullOrEmpty(stackRankField?.ToString()))
+                    {
+                        return stackRankField.ToString();
+                    }
+                }
+                return "9999999999";
+            }).ToList();
         }
     }
 }
